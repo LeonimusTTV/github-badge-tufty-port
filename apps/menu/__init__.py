@@ -9,9 +9,7 @@ import ui
 
 from app import Apps
 
-title_font = rom_font.ark
-label_font = rom_font.sins
-
+screen.font = font.load("/system/assets/fonts/ark.ppf")
 
 # find installed apps and create apps
 apps = Apps("/system/apps")
@@ -46,14 +44,11 @@ def update():
 
     ui.draw_background()
 
-    screen.font = title_font
     ui.draw_header()
 
     # draw menu apps
     apps.draw_icons()
 
-    # draw label for active menu icon
-    screen.font = label_font
     apps.draw_label()
 
     # draw hints for the active page
