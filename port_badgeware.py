@@ -31,6 +31,7 @@ SIMPLE_REPLACEMENTS = [
     (r"\bPixelFont\.load\b", "pixel_font.load"),
     (r"\bscreen\.draw\(", "screen.shape("),
     (r"\bio\.ticks\b", "badge.ticks"),
+    (r"\bbrushes\.color\(", "color.rgb("),
 ]
 
 # --- boutons : `io.BUTTON_X in io.pressed` -> `badge.pressed(BUTTON_X)` --
@@ -39,6 +40,28 @@ BUTTON_PATTERNS = [
     (re.compile(rf"io\.(BUTTON_\w+)\s+in\s+io\.{state}\b"), rf"badge.{state}(\1)")
     for state in BUTTON_STATES
 ]
+
+# --- nettoie `from badgeware import ...` : ne garde que les noms qui  --
+# --- existent encore vraiment comme attributs du module aujourd'hui   --
+KNOWN_GOOD_BADGEWARE_EXPORTS = {
+    "run", "clamp", "is_dir", "file_exists",
+    "get_battery_level", "is_charging", "fatal_error",
+}
+IMPORT_LINE = re.compile(r"^from badgeware import (.+)$", re.MULTILINE)
+
+
+def filter_badgeware_import(text):
+    def repl(m):
+        names = [n.strip() for n in m.group(1).split(",")]
+        kept = [n for n in names if n in KNOWN_GOOD_BADGEWARE_EXPORTS]
+        dropped = [n for n in names if n not in KNOWN_GOOD_BADGEWARE_EXPORTS]
+        if dropped:
+            print(f"    (import nettoye, retire : {', '.join(dropped)})")
+        if not kept:
+            return ""  # plus rien a importer, on vire la ligne entiere
+        return f"from badgeware import {', '.join(kept)}"
+    return IMPORT_LINE.sub(repl, text)
+
 
 # --- scale_blit(img, x, y, w, h) -> blit(img, rect(x, y, w, h)) ---------
 SCALE_BLIT = re.compile(
@@ -82,6 +105,7 @@ REMAINING_MARKERS = [
     "io.poll", "io.ticks", "brushes.", "shapes.", "Matrix(",
     "Image.load", "PixelFont.load", "screen.draw(", "screen.brush",
     "screen.scale_blit(", '__name__ == "__main__"', "__name__ == '__main__'",
+    "SpriteSheet(", "AnimatedSprite(",
 ]
 
 
@@ -97,6 +121,7 @@ def port_file(path: Path):
 
     text = convert_scale_blit(text)
     text = strip_main_guard(text)
+    text = filter_badgeware_import(text)
 
     if text == original:
         print(f"  (rien a changer)  {path}")
