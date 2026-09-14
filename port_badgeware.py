@@ -2,64 +2,54 @@
 """
 port_badgeware.py
 
-Porte une app MicroPython écrite pour l'ancienne API "badgeware" du
-badge GitHub Universe 2025 (brushes / shapes / Image / PixelFont /
-io.*) vers l'API actuelle du firmware Tufty 2350 (color / shape /
-image / pixel_font / badge.*).
+Ports a MicroPython app written for the old "badgeware" API of the
+GitHub Universe 2025 badge (brushes / shapes / Image / PixelFont /
+io.*) to the current Tufty 2350 firmware API (color / shape / image /
+font / badge.*).
 
-Usage :
-    python3 port_badgeware.py chemin/vers/__init__.py [autre_fichier.py ...]
-    python3 port_badgeware.py chemin/vers/dossier_app/     # traite tous les .py récursivement
+Usage:
+    python3 port_badgeware.py path/to/__init__.py [other_file.py ...]
+    python3 port_badgeware.py path/to/app_folder/     # recurses through all .py files
 
-Chaque fichier est réécrit sur place. Une copie .bak est gardée à
-côté avant modification. Tout ce que le script ne peut pas convertir
-sans risque (io.held tout seul, scale_blit avec des arguments trop
-complexes, etc.) est laissé tel quel et listé en fin d'exécution
-sous "needs manual review" — check ces lignes à la main.
+Each file is rewritten in place. A .bak copy is kept alongside it
+before modification. The script also completely strips any
+`from badgeware import ...` / `import badgeware` line — once an app
+is launched via run(), everything is already ambient (screen, badge,
+font, run, etc.), so there's no need to import anything from
+badgeware anymore. Anything the script can't safely convert (a bare
+io.held, SpriteSheet, a scale_blit call with arguments too complex
+for the regex, etc.) is left untouched and listed at the end of the
+run under "needs manual review" — check those lines by hand.
 """
 
 import re
 import sys
 from pathlib import Path
 
-# --- remplacements simples, 1 pour 1 ------------------------------------
 SIMPLE_REPLACEMENTS = [
     (r"\bscreen\.brush\b", "screen.pen"),
     (r"\bshapes\.", "shape."),
     (r"\bMatrix\(", "mat3("),
     (r"\bImage\.load\b", "image.load"),
-    (r"\bPixelFont\.load\b", "pixel_font.load"),
+    (r"\bPixelFont\.load\b", "font.load"),
     (r"\bscreen\.draw\(", "screen.shape("),
     (r"\bio\.ticks\b", "badge.ticks"),
     (r"\bbrushes\.color\(", "color.rgb("),
 ]
 
-# --- boutons : `io.BUTTON_X in io.pressed` -> `badge.pressed(BUTTON_X)` --
 BUTTON_STATES = ["pressed", "held", "released", "changed"]
 BUTTON_PATTERNS = [
     (re.compile(rf"io\.(BUTTON_\w+)\s+in\s+io\.{state}\b"), rf"badge.{state}(\1)")
     for state in BUTTON_STATES
 ]
 
-# --- nettoie `from badgeware import ...` : ne garde que les noms qui  --
-# --- existent encore vraiment comme attributs du module aujourd'hui   --
-KNOWN_GOOD_BADGEWARE_EXPORTS = {
-    "run", "clamp", "is_dir", "file_exists",
-    "get_battery_level", "is_charging", "fatal_error",
-}
-IMPORT_LINE = re.compile(r"^from badgeware import (.+)$", re.MULTILINE)
+IMPORT_LINE = re.compile(r"^(from badgeware import .+|import badgeware)\n?", re.MULTILINE)
 
 
 def filter_badgeware_import(text):
     def repl(m):
-        names = [n.strip() for n in m.group(1).split(",")]
-        kept = [n for n in names if n in KNOWN_GOOD_BADGEWARE_EXPORTS]
-        dropped = [n for n in names if n not in KNOWN_GOOD_BADGEWARE_EXPORTS]
-        if dropped:
-            print(f"    (import nettoye, retire : {', '.join(dropped)})")
-        if not kept:
-            return ""  # plus rien a importer, on vire la ligne entiere
-        return f"from badgeware import {', '.join(kept)}"
+        print(f"    (import removed: {m.group(1).strip()})")
+        return ""
     return IMPORT_LINE.sub(repl, text)
 
 
@@ -78,7 +68,7 @@ def convert_scale_blit(text):
     return SCALE_BLIT.sub(repl, text)
 
 
-# --- vire le garde `if __name__ == "__main__":` -------------------------
+# --- strips the `if __name__ == "__main__":` guard ----------------------
 MAIN_GUARD = re.compile(
     r'^if __name__ == ["\']__main__["\']:\n((?:[ \t]+.*\n?)+)',
     re.MULTILINE,
@@ -124,17 +114,17 @@ def port_file(path: Path):
     text = filter_badgeware_import(text)
 
     if text == original:
-        print(f"  (rien a changer)  {path}")
+        print(f"  (nothing to change)  {path}")
         return
 
     backup = path.with_suffix(path.suffix + ".bak")
     backup.write_text(original)
     path.write_text(text)
-    print(f"  porte             {path}  (backup: {backup.name})")
+    print(f"  ported             {path}  (backup: {backup.name})")
 
     leftovers = [m for m in REMAINING_MARKERS if m in text]
     if leftovers:
-        print(f"    !! a verifier a la main dans {path.name}: {', '.join(leftovers)}")
+        print(f"    !! needs manual review in {path.name}: {', '.join(leftovers)}")
 
 
 def collect_files(args):
@@ -146,7 +136,7 @@ def collect_files(args):
         elif p.is_file():
             files.append(p)
         else:
-            print(f"  !! introuvable : {arg}")
+            print(f"  !! not found: {arg}")
     return files
 
 
@@ -157,10 +147,10 @@ def main():
 
     files = collect_files(sys.argv[1:])
     if not files:
-        print("Aucun fichier .py trouve.")
+        print("No .py files found.")
         sys.exit(1)
 
-    print(f"Portage de {len(files)} fichier(s)...\n")
+    print(f"Porting {len(files)} file(s)...\n")
     for f in files:
         port_file(f)
 
